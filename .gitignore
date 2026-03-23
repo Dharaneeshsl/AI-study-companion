@@ -1,58 +1,9 @@
-# OS generated files
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-
-# IDEs and Editors
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# Node & Next.js (Frontend)
-frontend/node_modules/
-node_modules/
-frontend/.next/
+﻿node_modules/
 .next/
-frontend/out/
-out/
-frontend/build/
-build/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-
-# Python & FastAPI (Backend)
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-backend/venv/
-backend/.venv/
-venv/
-.venv/
-env/
-.env/
-pip-log.txt
-pip-delete-this-directory.txt
-.pytest_cache/
-.coverage
-htmlcov/
-
-# Environment Variables
 .env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-# Note: .env.example should be tracked
-
-# Logs
-logs
-*.log
+__pycache__/
+*.pyc
+venv/
+.env.*
+.DS_Store
+.env.*
