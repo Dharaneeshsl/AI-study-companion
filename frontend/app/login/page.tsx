@@ -20,8 +20,8 @@ export default function LoginPage() {
       setToken(access_token);
       window.dispatchEvent(new Event("auth-change"));
       router.push("/");
-    } catch (err: any) {
-      setError(err.message || "Failed to log in.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to log in.");
     }
   };
 

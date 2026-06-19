@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import logging
 import os
 from typing import Any, Dict
@@ -7,6 +8,7 @@ from typing import Any, Dict
 import httpx
 
 from core.env import load_project_env
+from database import database
 
 logger = logging.getLogger("hindsight")
 
@@ -26,28 +28,29 @@ DEFAULT_MEMORY = (
 )
 
 
-def parse_memory(memory_str: str) -> dict:
+MEMORY_DEFAULTS = {
+    "Student weak topics": "[]",
+    "Recent mistakes": "[]",
+    "Subjects studied": "[]",
+    "Last session": "[]",
+    "Upcoming exams": "[]",
+    "Study streak": "0 days",
+}
+
+
+def parse_memory(memory_str: str) -> dict[str, str]:
     parts = {}
     for line in memory_str.strip().split("\n"):
         if ":" in line:
             key, val = line.split(":", 1)
             parts[key.strip()] = val.strip()
-    
-    defaults = {
-        "Student weak topics": "[]",
-        "Recent mistakes": "[]",
-        "Subjects studied": "[]",
-        "Last session": "[]",
-        "Upcoming exams": "[]",
-        "Study streak": "0 days"
-    }
-    for k, v in defaults.items():
-        if k not in parts:
-            parts[k] = v
+
+    for key, value in MEMORY_DEFAULTS.items():
+        parts.setdefault(key, value)
     return parts
 
 
-def serialize_memory(memory_dict: dict) -> str:
+def serialize_memory(memory_dict: dict[str, str]) -> str:
     return (
         f"Student weak topics: {memory_dict.get('Student weak topics', '[]')}\n"
         f"Recent mistakes: {memory_dict.get('Recent mistakes', '[]')}\n"
@@ -58,7 +61,19 @@ def serialize_memory(memory_dict: dict) -> str:
     )
 
 
-from database import database
+def parse_memory_list(raw: str) -> list[str]:
+    try:
+        parsed = ast.literal_eval(raw)
+        if isinstance(parsed, list):
+            return [str(item).strip() for item in parsed if str(item).strip()]
+    except (SyntaxError, ValueError):
+        pass
+    return [item.strip() for item in raw.strip("[]").split(",") if item.strip()]
+
+
+def serialize_memory_list(items: list[str]) -> str:
+    cleaned = [item.strip() for item in items if item.strip()]
+    return repr(cleaned)
 
 
 def _auth_headers() -> Dict[str, str]:
@@ -91,7 +106,11 @@ async def _get_memory_from_hindsight(user_id: str) -> str | None:
                     continue
                 data: Any = response.json()
                 if isinstance(data, dict):
-                    content = data.get("content") or data.get("memory") or data.get("text")
+                    content = (
+                        data.get("content")
+                        or data.get("memory")
+                        or data.get("text")
+                    )
                     if isinstance(content, str) and content.strip():
                         return content
             except Exception:
@@ -128,6 +147,7 @@ async def _save_memory_to_hindsight(user_id: str, content: str) -> bool:
                 continue
     return False
 
+
 async def get_memory(user_id: str) -> str:
     logger.info("Fetching memory for user_id=%s", user_id)
     try:
@@ -151,7 +171,7 @@ async def save_memory(user_id: str, content: str) -> bool:
         await database.memories.update_one(
             {"user_id": user_id},
             {"$set": {"content": content}},
-            upsert=True
+            upsert=True,
         )
         return True
     except Exception as exc:

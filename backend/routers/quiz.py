@@ -17,7 +17,14 @@ from models.quiz import (
     QuizQuestion,
 )
 from services.groq_client import call_groq
-from services.hindsight import get_memory, save_memory, parse_memory, serialize_memory
+from services.hindsight import (
+    get_memory,
+    parse_memory,
+    parse_memory_list,
+    save_memory,
+    serialize_memory,
+    serialize_memory_list,
+)
 from core.security import get_current_user
 
 logger = logging.getLogger("router.quiz")
@@ -62,6 +69,18 @@ def _fallback_questions(subject: str) -> List[QuizQuestion]:
     ]
 
 
+def _validate_questions(questions: List[QuizQuestion]) -> List[QuizQuestion]:
+    if len(questions) != 5:
+        raise ValueError("Expected 5 questions")
+
+    for question in questions:
+        if len(question.options) != 4:
+            raise ValueError("Each question must have exactly 4 options")
+        if question.answer not in question.options:
+            raise ValueError("Correct answer must be one of the options")
+    return questions
+
+
 @router.post("/generate", response_model=QuizResponse)
 async def generate_quiz(
     request: QuizRequest,
@@ -76,9 +95,7 @@ async def generate_quiz(
         try:
             data = _extract_json(raw)
             questions_raw = data.get("questions", [])
-            questions = [QuizQuestion(**q) for q in questions_raw]
-            if len(questions) != 5:
-                raise ValueError("Expected 5 questions")
+            questions = _validate_questions([QuizQuestion(**q) for q in questions_raw])
         except Exception:
             logger.warning("Failed to parse quiz JSON; using fallback")
             questions = _fallback_questions(request.subject)
@@ -123,19 +140,15 @@ async def submit_quiz(
         timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
         mem_dict = parse_memory(memory)
         mem_dict["Last session"] = timestamp
-        
+
         if mistakes:
-            existing_mistakes = mem_dict["Recent mistakes"].strip("[]").replace("'", "").replace('"', '').split(",")
-            existing_mistakes.extend(mistakes)
-            cleaned_mistakes = [m.strip() for m in existing_mistakes if m.strip()]
-            if len(cleaned_mistakes) > 5:
-                cleaned_mistakes = cleaned_mistakes[-5:]
-            mem_dict["Recent mistakes"] = "[" + ", ".join(cleaned_mistakes) + "]"
-        
-        existing_subjects = mem_dict["Subjects studied"].strip("[]").replace("'", "").replace('"', '').split(",")
-        existing_subjects.append(request.subject)
-        cleaned_subjects = list(set([s.strip() for s in existing_subjects if s.strip()]))
-        mem_dict["Subjects studied"] = "[" + ", ".join(cleaned_subjects) + "]"
+            existing_mistakes = parse_memory_list(mem_dict["Recent mistakes"])
+            cleaned_mistakes = [*existing_mistakes, *mistakes][-5:]
+            mem_dict["Recent mistakes"] = serialize_memory_list(cleaned_mistakes)
+
+        existing_subjects = parse_memory_list(mem_dict["Subjects studied"])
+        cleaned_subjects = list(dict.fromkeys([*existing_subjects, request.subject]))
+        mem_dict["Subjects studied"] = serialize_memory_list(cleaned_subjects)
 
         updated_memory = serialize_memory(mem_dict)
         await save_memory(user_id, updated_memory)

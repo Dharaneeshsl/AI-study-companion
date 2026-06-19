@@ -37,7 +37,7 @@ export default function ChatPage() {
       const assistantMessage: ChatMessage = { role: "assistant", content: reply.reply };
       setMessages((prev) => [...prev, assistantMessage]);
     } catch (err) {
-      setError("Something went wrong. Please try again.");
+      setError(err instanceof Error ? err.message : "Chat failed.");
     } finally {
       setLoading(false);
     }

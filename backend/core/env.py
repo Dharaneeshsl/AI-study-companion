@@ -13,4 +13,3 @@ def load_project_env() -> None:
     env_path = project_root / ".env"
     # `override=False` so real environment variables win over .env file values.
     load_dotenv(dotenv_path=env_path, override=False)
-
