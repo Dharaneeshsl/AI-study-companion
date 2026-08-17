@@ -1,6 +1,8 @@
 import re
 from typing import Optional
 
+from pydantic import BaseModel, EmailStr, Field, validator
+
 
 class UserBase(BaseModel):
     username: str = Field(min_length=3, max_length=32)

@@ -44,6 +44,7 @@ MEMORY_DEFAULTS = {
     "Student weak topics": "[]",
     "Recent mistakes": "[]",
     "Subjects studied": "[]",
+    "Learning insights": "[]",
     "Last session": "[]",
     "Upcoming exams": "[]",
     "Study streak": "0 days",
@@ -67,6 +68,7 @@ def serialize_memory(memory_dict: dict[str, str]) -> str:
         f"Student weak topics: {memory_dict.get('Student weak topics', '[]')}\n"
         f"Recent mistakes: {memory_dict.get('Recent mistakes', '[]')}\n"
         f"Subjects studied: {memory_dict.get('Subjects studied', '[]')}\n"
+        f"Learning insights: {memory_dict.get('Learning insights', '[]')}\n"
         f"Last session: {memory_dict.get('Last session', '[]')}\n"
         f"Upcoming exams: {memory_dict.get('Upcoming exams', '[]')}\n"
         f"Study streak: {memory_dict.get('Study streak', '0 days')}"
@@ -86,6 +88,47 @@ def parse_memory_list(raw: str) -> list[str]:
 def serialize_memory_list(items: list[str]) -> str:
     cleaned = [item.strip() for item in items if item.strip()]
     return repr(cleaned)
+
+
+def parse_list_value(raw: str) -> list[str]:
+    """Backward-compatible alias used by routers and tests."""
+    return parse_memory_list(raw)
+
+
+def format_list_value(items: list[str]) -> str:
+    return repr([item.strip() for item in items if item.strip()])
+
+
+def append_memory_item(memory_dict: dict[str, str], key: str, value: str, limit: int = 5) -> None:
+    items = parse_list_value(memory_dict.get(key, "[]"))
+    if value.strip():
+        items.append(value.strip())
+    memory_dict[key] = format_list_value(items[-limit:])
+
+
+def record_study_activity(memory_dict: dict[str, str], timestamp: str) -> None:
+    """Update the study streak once per UTC calendar day."""
+    today = datetime.strptime(timestamp[:10], "%Y-%m-%d").date()
+    previous_raw = memory_dict.get("Last session", "")
+    previous_date = None
+    try:
+        previous_date = datetime.strptime(previous_raw[:10], "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        pass
+
+    try:
+        current_streak = int(str(memory_dict.get("Study streak", "0")).split()[0])
+    except (TypeError, ValueError):
+        current_streak = 0
+
+    if previous_date == today:
+        next_streak = max(current_streak, 1)
+    elif previous_date == today - timedelta(days=1):
+        next_streak = max(current_streak, 0) + 1
+    else:
+        next_streak = 1
+    memory_dict["Study streak"] = f"{next_streak} days"
+    memory_dict["Last session"] = timestamp
 
 
 def _auth_headers() -> Dict[str, str]:
