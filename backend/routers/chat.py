@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import logging
 from datetime import datetime, timezone
 from typing import Tuple
@@ -8,12 +10,12 @@ from core.security import get_current_user
 from models.chat import ChatRequest, ChatResponse
 from services.groq_client import call_groq
 from services.hindsight import (
-    append_memory_item,
     get_memory,
     parse_memory,
-    record_study_activity,
+    parse_memory_list,
     save_memory,
     serialize_memory,
+    serialize_memory_list,
 )
 
 
@@ -24,8 +26,11 @@ router = APIRouter(prefix="/api", tags=["chat"])
 def _build_system_prompt(memory: str) -> str:
     return (
         "You are an AI study companion. Personalize every response based on the student's memory.\n"
-        "Use weak topics, recent mistakes, study streak, and upcoming exams when relevant; do not invent data.\n"
-        "If the user asks a new question, connect it to their weak topics or prior mistakes when possible.\n"
+        "Always reference the memory explicitly: highlight weak topics, recent mistakes, "
+        "study streak, "
+        "and any upcoming exams. Tailor tone and pacing to the student's history.\n"
+        "If the user asks a new question, connect it to their weak topics or prior mistakes "
+        "when possible.\n"
         "Return your response in this exact format:\n"
         "REPLY:\n<assistant reply>\n\n"
         "INSIGHT:\n<one or two sentences summarizing learning insight to store in learning insights, not weak topics>\n\n"
@@ -50,12 +55,17 @@ async def chat(request: ChatRequest, current_user=Depends(get_current_user)) -> 
         raw = call_groq(_build_system_prompt(memory), request.message)
         reply, insight = _parse_reply(raw)
 
-        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-        mem_dict = parse_memory(memory)
-        record_study_activity(mem_dict, timestamp)
-        append_memory_item(mem_dict, "Learning insights", insight, limit=5)
+        timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
 
-        await save_memory(user_id, serialize_memory(mem_dict))
+        mem_dict = parse_memory(memory)
+        mem_dict["Last session"] = timestamp
+
+        current_topics = parse_memory_list(mem_dict["Student weak topics"])
+        cleaned_topics = [*current_topics, insight][-3:]
+        mem_dict["Student weak topics"] = serialize_memory_list(cleaned_topics)
+
+        updated_memory = serialize_memory(mem_dict)
+        await save_memory(user_id, updated_memory)
         return ChatResponse(reply=reply)
     except Exception as exc:
         logger.exception("Chat endpoint failed: %s", exc)

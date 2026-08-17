@@ -14,5 +14,6 @@ client = AsyncIOMotorClient(MONGODB_URL)
 database = client[MONGODB_DB_NAME]
 
 
+# Dependency
 async def get_db():
     yield database

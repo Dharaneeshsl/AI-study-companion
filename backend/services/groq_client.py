@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Optional
 
 from groq import Groq
 
@@ -32,7 +31,9 @@ def call_groq(system_prompt: str, user_message: str) -> str:
         return "I'm ready to help, but the Groq API key is missing."
 
     try:
-        groq_base_url = _normalize_groq_base_url(os.getenv("GROQ_BASE_URL", DEFAULT_GROQ_BASE_URL))
+        groq_base_url = _normalize_groq_base_url(
+            os.getenv("GROQ_BASE_URL", DEFAULT_GROQ_BASE_URL)
+        )
         client = Groq(api_key=groq_api_key, base_url=groq_base_url)
         response = client.chat.completions.create(
             model=MODEL_NAME,

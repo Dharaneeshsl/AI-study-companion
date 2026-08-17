@@ -18,14 +18,14 @@ from models.quiz import (
 )
 from services.groq_client import call_groq
 from services.hindsight import (
-    append_memory_item,
     get_memory,
-    parse_list_value,
     parse_memory,
-    record_study_activity,
+    parse_memory_list,
     save_memory,
     serialize_memory,
+    serialize_memory_list,
 )
+from core.security import get_current_user
 
 
 logger = logging.getLogger("router.quiz")
@@ -65,6 +65,18 @@ def _fallback_questions(subject: str) -> List[QuizQuestion]:
     ]
 
 
+def _validate_questions(questions: List[QuizQuestion]) -> List[QuizQuestion]:
+    if len(questions) != 5:
+        raise ValueError("Expected 5 questions")
+
+    for question in questions:
+        if len(question.options) != 4:
+            raise ValueError("Each question must have exactly 4 options")
+        if question.answer not in question.options:
+            raise ValueError("Correct answer must be one of the options")
+    return questions
+
+
 @router.post("/generate", response_model=QuizResponse)
 async def generate_quiz(
     request: QuizRequest,
@@ -74,10 +86,9 @@ async def generate_quiz(
         user_id = current_user["user_id"]
         memory = await get_memory(user_id)
         try:
-            data = _extract_json(call_groq(_build_quiz_prompt(memory, request.subject), "Generate 5 personalized questions."))
-            questions = [QuizQuestion(**question) for question in data.get("questions", [])]
-            if len(questions) != 5:
-                raise ValueError("Expected 5 questions")
+            data = _extract_json(raw)
+            questions_raw = data.get("questions", [])
+            questions = _validate_questions([QuizQuestion(**q) for q in questions_raw])
         except Exception:
             logger.warning("Failed to parse quiz JSON; using fallback", exc_info=True)
             questions = _fallback_questions(request.subject)
@@ -114,17 +125,24 @@ async def submit_quiz(
             )
 
         user_id = current_user["user_id"]
-        mem_dict = parse_memory(await get_memory(user_id))
-        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-        record_study_activity(mem_dict, timestamp)
-        for mistake in mistakes:
-            append_memory_item(mem_dict, "Recent mistakes", mistake, limit=5)
-        subjects = set(parse_list_value(mem_dict["Subjects studied"]))
-        subjects.add(request.subject.strip())
-        mem_dict["Subjects studied"] = json.dumps(sorted(subjects), ensure_ascii=False)
-        await save_memory(user_id, serialize_memory(mem_dict))
+        memory = await get_memory(user_id)
+        timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+        mem_dict = parse_memory(memory)
+        mem_dict["Last session"] = timestamp
 
-        return QuizResult(score=score, total=len(request.answers), feedback=feedback)
+        if mistakes:
+            existing_mistakes = parse_memory_list(mem_dict["Recent mistakes"])
+            cleaned_mistakes = [*existing_mistakes, *mistakes][-5:]
+            mem_dict["Recent mistakes"] = serialize_memory_list(cleaned_mistakes)
+
+        existing_subjects = parse_memory_list(mem_dict["Subjects studied"])
+        cleaned_subjects = list(dict.fromkeys([*existing_subjects, request.subject]))
+        mem_dict["Subjects studied"] = serialize_memory_list(cleaned_subjects)
+
+        updated_memory = serialize_memory(mem_dict)
+        await save_memory(user_id, updated_memory)
+
+        return QuizResult(score=score, total=total, feedback=feedback)
     except Exception as exc:
         logger.exception("Quiz submission failed: %s", exc)
         raise HTTPException(status_code=500, detail="Quiz submission failed") from exc

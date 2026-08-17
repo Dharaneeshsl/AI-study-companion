@@ -31,7 +31,7 @@ export default function StudyPlanPage() {
       const response = await getStudyPlan({});
       setPlan(response);
     } catch (err) {
-      setError("Unable to fetch study plan.");
+      setError(err instanceof Error ? err.message : "Unable to fetch study plan.");
     } finally {
       setLoading(false);
     }

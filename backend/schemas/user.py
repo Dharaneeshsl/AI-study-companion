@@ -1,19 +1,10 @@
 import re
 from typing import Optional
 
-from pydantic import BaseModel, EmailStr, Field, validator
-
 
 class UserBase(BaseModel):
     username: str = Field(min_length=3, max_length=32)
     email: EmailStr
-
-    @validator("username")
-    def validate_username(cls, value: str) -> str:
-        normalized = value.strip()
-        if not re.fullmatch(r"[A-Za-z0-9_.-]+", normalized):
-            raise ValueError("Username may contain only letters, numbers, underscores, dots, and hyphens")
-        return normalized
 
 
 class UserCreate(UserBase):
@@ -24,6 +15,7 @@ class UserCreate(UserBase):
         if not any(char.isalpha() for char in value) or not any(char.isdigit() for char in value):
             raise ValueError("Password must contain at least one letter and one number")
         return value
+
 
 
 class UserResponse(UserBase):

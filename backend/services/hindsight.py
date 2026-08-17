@@ -1,5 +1,6 @@
+from __future__ import annotations
+
 import ast
-import json
 import logging
 import os
 from datetime import datetime, timedelta
@@ -8,6 +9,7 @@ from typing import Any, Dict
 import httpx
 
 from core.env import load_project_env
+from database import database
 
 
 logger = logging.getLogger("hindsight")
@@ -38,78 +40,52 @@ _MEMORY_DEFAULTS = {
 }
 
 
-def parse_memory(memory_str: str) -> dict:
-    parts: dict[str, str] = {}
-    for line in (memory_str or "").strip().splitlines():
+MEMORY_DEFAULTS = {
+    "Student weak topics": "[]",
+    "Recent mistakes": "[]",
+    "Subjects studied": "[]",
+    "Last session": "[]",
+    "Upcoming exams": "[]",
+    "Study streak": "0 days",
+}
+
+
+def parse_memory(memory_str: str) -> dict[str, str]:
+    parts = {}
+    for line in memory_str.strip().split("\n"):
         if ":" in line:
-            key, value = line.split(":", 1)
-            parts[key.strip()] = value.strip()
-    for key, value in _MEMORY_DEFAULTS.items():
+            key, val = line.split(":", 1)
+            parts[key.strip()] = val.strip()
+
+    for key, value in MEMORY_DEFAULTS.items():
         parts.setdefault(key, value)
     return parts
 
 
-def serialize_memory(memory_dict: dict) -> str:
-    return "\n".join(
-        f"{key}: {memory_dict.get(key, default)}"
-        for key, default in _MEMORY_DEFAULTS.items()
+def serialize_memory(memory_dict: dict[str, str]) -> str:
+    return (
+        f"Student weak topics: {memory_dict.get('Student weak topics', '[]')}\n"
+        f"Recent mistakes: {memory_dict.get('Recent mistakes', '[]')}\n"
+        f"Subjects studied: {memory_dict.get('Subjects studied', '[]')}\n"
+        f"Last session: {memory_dict.get('Last session', '[]')}\n"
+        f"Upcoming exams: {memory_dict.get('Upcoming exams', '[]')}\n"
+        f"Study streak: {memory_dict.get('Study streak', '0 days')}"
     )
 
 
-def parse_list_value(value: str) -> list[str]:
-    """Parse old stringified lists as well as valid JSON lists."""
-    if not value or value.strip() in {"[]", ""}:
-        return []
+def parse_memory_list(raw: str) -> list[str]:
     try:
-        parsed = json.loads(value)
-    except (TypeError, json.JSONDecodeError):
-        try:
-            parsed = ast.literal_eval(value)
-        except (ValueError, SyntaxError):
-            parsed = value.strip("[]").split(",")
-    if isinstance(parsed, list):
-        return [str(item).strip() for item in parsed if str(item).strip()]
-    return [str(parsed).strip()] if str(parsed).strip() else []
-
-
-def format_list_value(items: list[str]) -> str:
-    return json.dumps(items, ensure_ascii=False)
-
-
-def append_memory_item(memory_dict: dict, key: str, value: str, limit: int = 5) -> None:
-    items = parse_list_value(memory_dict.get(key, "[]"))
-    if value.strip():
-        items.append(value.strip())
-    memory_dict[key] = format_list_value(items[-limit:])
-
-
-def record_study_activity(memory_dict: dict, timestamp: str) -> None:
-    """Update the UTC study streak once per calendar day."""
-    today = datetime.strptime(timestamp[:10], "%Y-%m-%d").date()
-    previous_raw = memory_dict.get("Last session", "")
-    previous_date = None
-    try:
-        previous_date = datetime.strptime(previous_raw[:10], "%Y-%m-%d").date()
-    except (TypeError, ValueError):
+        parsed = ast.literal_eval(raw)
+        if isinstance(parsed, list):
+            return [str(item).strip() for item in parsed if str(item).strip()]
+    except (SyntaxError, ValueError):
         pass
-
-    current_streak = 0
-    try:
-        current_streak = int(str(memory_dict.get("Study streak", "0")).split()[0])
-    except (TypeError, ValueError):
-        pass
-
-    if previous_date == today:
-        next_streak = max(current_streak, 1)
-    elif previous_date == today - timedelta(days=1):
-        next_streak = max(current_streak, 0) + 1
-    else:
-        next_streak = 1
-    memory_dict["Study streak"] = f"{next_streak} days"
-    memory_dict["Last session"] = timestamp
+    return [item.strip() for item in raw.strip("[]").split(",") if item.strip()]
 
 
-from database import database
+def serialize_memory_list(items: list[str]) -> str:
+    cleaned = [item.strip() for item in items if item.strip()]
+    return repr(cleaned)
 
 
 def _auth_headers() -> Dict[str, str]:
@@ -138,7 +114,11 @@ async def _get_memory_from_hindsight(user_id: str) -> str | None:
                     continue
                 data: Any = response.json()
                 if isinstance(data, dict):
-                    content = data.get("content") or data.get("memory") or data.get("text")
+                    content = (
+                        data.get("content")
+                        or data.get("memory")
+                        or data.get("text")
+                    )
                     if isinstance(content, str) and content.strip():
                         return content
             except Exception:
@@ -196,7 +176,9 @@ async def save_memory(user_id: str, content: str) -> bool:
         if await _save_memory_to_hindsight(user_id, content):
             return True
         await database.memories.update_one(
-            {"user_id": user_id}, {"$set": {"content": content}}, upsert=True
+            {"user_id": user_id},
+            {"$set": {"content": content}},
+            upsert=True,
         )
         return True
     except Exception:

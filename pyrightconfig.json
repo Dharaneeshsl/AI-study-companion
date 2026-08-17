@@ -3,5 +3,10 @@
   "venv": "venv",
   "extraPaths": [
     "backend"
+  ],
+  "exclude": [
+    "backend/venv",
+    "frontend/node_modules",
+    "frontend/.next"
   ]
 }

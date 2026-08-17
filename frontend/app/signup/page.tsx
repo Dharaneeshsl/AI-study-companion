@@ -17,9 +17,9 @@ export default function SignupPage() {
     setError(null);
     try {
       await signup({ username, email, password });
-      router.push("/login"); // Redirect to login after successful signup
-    } catch (err: any) {
-      setError(err.message || "Failed to sign up.");
+      router.push("/login");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to sign up.");
     }
   };
 

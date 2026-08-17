@@ -43,7 +43,7 @@ export default function QuizPage() {
       setQuestions(response.questions);
       setAnswers({});
     } catch (err) {
-      setError("Unable to generate quiz right now.");
+      setError(err instanceof Error ? err.message : "Unable to generate quiz right now.");
     } finally {
       setLoading(false);
     }
@@ -57,6 +57,10 @@ export default function QuizPage() {
     if (questions.length === 0) return;
     if (!userId) {
       setError("Please log in to continue.");
+      return;
+    }
+    if (questions.some((q) => !answers[q.id])) {
+      setError("Answer every question before submitting.");
       return;
     }
     setLoading(true);
@@ -73,7 +77,7 @@ export default function QuizPage() {
       const response = await submitQuiz({ subject, answers: payloadAnswers });
       setResult(response);
     } catch (err) {
-      setError("Unable to submit quiz right now.");
+      setError(err instanceof Error ? err.message : "Unable to submit quiz right now.");
     } finally {
       setLoading(false);
     }
@@ -141,7 +145,7 @@ export default function QuizPage() {
             {result.feedback.map((fb) => (
               <div key={fb.id} className="text-sm text-gray-300">
                 <p className={fb.correct ? "text-emerald-400" : "text-red-400"}>
-                  {fb.correct ? "Correct" : "Incorrect"} — {fb.topic}
+                  {fb.correct ? "Correct" : "Incorrect"} - {fb.topic}
                 </p>
                 {!fb.correct && (
                   <p className="text-gray-400">Correct: {fb.correct_answer} | {fb.explanation}</p>
