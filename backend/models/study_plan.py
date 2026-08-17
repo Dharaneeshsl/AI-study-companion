@@ -1,6 +1,5 @@
-﻿from __future__ import annotations
+﻿from typing import List
 
-from typing import List
 from pydantic import BaseModel
 
 
@@ -16,7 +15,7 @@ class StudyDay(BaseModel):
 
 
 class StudyPlanRequest(BaseModel):
-    user_id: str
+    pass
 
 
 class StudyPlanResponse(BaseModel):

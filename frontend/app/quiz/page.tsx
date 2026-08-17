@@ -39,7 +39,7 @@ export default function QuizPage() {
     setError(null);
     setResult(null);
     try {
-      const response = await generateQuiz({ user_id: userId, subject });
+      const response = await generateQuiz({ subject });
       setQuestions(response.questions);
       setAnswers({});
     } catch (err) {
@@ -70,7 +70,7 @@ export default function QuizPage() {
         explanation: q.explanation,
         topic: q.topic,
       }));
-      const response = await submitQuiz({ user_id: userId, subject, answers: payloadAnswers });
+      const response = await submitQuiz({ subject, answers: payloadAnswers });
       setResult(response);
     } catch (err) {
       setError("Unable to submit quiz right now.");

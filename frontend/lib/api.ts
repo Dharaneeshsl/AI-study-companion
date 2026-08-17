@@ -1,5 +1,4 @@
 export interface ChatRequest {
-  user_id: string;
   message: string;
 }
 
@@ -15,7 +14,6 @@ export interface ChatMessage {
 }
 
 export interface QuizRequest {
-  user_id: string;
   subject: string;
 }
 
@@ -42,7 +40,6 @@ export interface QuizAnswer {
 }
 
 export interface QuizSubmitRequest {
-  user_id: string;
   subject: string;
   answers: QuizAnswer[];
 }
@@ -62,9 +59,7 @@ export interface QuizResult {
   feedback: QuizFeedback[];
 }
 
-export interface StudyPlanRequest {
-  user_id: string;
-}
+export type StudyPlanRequest = Record<string, never>;
 
 export interface StudySession {
   subject: string;

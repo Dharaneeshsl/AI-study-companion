@@ -1,27 +1,34 @@
-from __future__ import annotations
-
 import json
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from core.security import get_current_user
 from models.quiz import (
-    QuizRequest,
-    QuizResponse,
-    QuizSubmitRequest,
-    QuizResult,
+    QuizAnswer,
     QuizFeedback,
     QuizQuestion,
+    QuizRequest,
+    QuizResponse,
+    QuizResult,
+    QuizSubmitRequest,
 )
 from services.groq_client import call_groq
-from services.hindsight import get_memory, save_memory, parse_memory, serialize_memory
-from core.security import get_current_user
+from services.hindsight import (
+    append_memory_item,
+    get_memory,
+    parse_list_value,
+    parse_memory,
+    record_study_activity,
+    save_memory,
+    serialize_memory,
+)
+
 
 logger = logging.getLogger("router.quiz")
-
 router = APIRouter(prefix="/api/quiz", tags=["quiz"])
 
 
@@ -31,13 +38,9 @@ def _build_quiz_prompt(memory: str, subject: str) -> str:
         "Use the student's memory to target weak topics in the given subject.\n"
         "Prioritize topics explicitly mentioned as weak or recently mistaken.\n"
         "Return ONLY valid JSON in this format:\n"
-        "{\"questions\": [\n"
-        "  {\"id\": \"q1\", \"question\": \"...\", \"options\": [\"A\", \"B\", \"C\", \"D\"], "
-        "\"answer\": \"A\", \"explanation\": \"...\", \"topic\": \"...\"}\n"
-        "]}\n\n"
-        f"Subject: {subject}\n"
-        "MEMORY CONTEXT:\n"
-        f"{memory}\n"
+        '{"questions": [{"id": "q1", "question": "...", "options": ["A", "B", "C", "D"], '
+        '"answer": "A", "explanation": "...", "topic": "..."}]}\n\n'
+        f"Subject: {subject}\nMEMORY CONTEXT:\n{memory}\n"
     )
 
 
@@ -70,22 +73,18 @@ async def generate_quiz(
     try:
         user_id = current_user["user_id"]
         memory = await get_memory(user_id)
-        system_prompt = _build_quiz_prompt(memory, request.subject)
-        logger.info("Calling Groq for quiz generation user_id=%s", user_id)
-        raw = call_groq(system_prompt, "Generate 5 personalized questions.")
         try:
-            data = _extract_json(raw)
-            questions_raw = data.get("questions", [])
-            questions = [QuizQuestion(**q) for q in questions_raw]
+            data = _extract_json(call_groq(_build_quiz_prompt(memory, request.subject), "Generate 5 personalized questions."))
+            questions = [QuizQuestion(**question) for question in data.get("questions", [])]
             if len(questions) != 5:
                 raise ValueError("Expected 5 questions")
         except Exception:
-            logger.warning("Failed to parse quiz JSON; using fallback")
+            logger.warning("Failed to parse quiz JSON; using fallback", exc_info=True)
             questions = _fallback_questions(request.subject)
         return QuizResponse(questions=questions)
     except Exception as exc:
         logger.exception("Quiz generation failed: %s", exc)
-        raise HTTPException(status_code=500, detail="Quiz generation failed")
+        raise HTTPException(status_code=500, detail="Quiz generation failed") from exc
 
 
 @router.post("/submit", response_model=QuizResult)
@@ -94,19 +93,15 @@ async def submit_quiz(
     current_user=Depends(get_current_user),
 ) -> QuizResult:
     try:
-        total = len(request.answers)
         feedback: List[QuizFeedback] = []
+        mistakes: list[str] = []
         score = 0
-        mistakes = []
 
         for answer in request.answers:
             is_correct = answer.selected.strip() == answer.correct.strip()
-            if is_correct:
-                score += 1
-            else:
-                mistakes.append(
-                    f"{request.subject} - {answer.topic}: missed '{answer.question}'"
-                )
+            score += int(is_correct)
+            if not is_correct:
+                mistakes.append(f"{request.subject} - {answer.topic}: missed '{answer.question}'")
             feedback.append(
                 QuizFeedback(
                     id=answer.id,
@@ -119,28 +114,17 @@ async def submit_quiz(
             )
 
         user_id = current_user["user_id"]
-        memory = await get_memory(user_id)
-        timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
-        mem_dict = parse_memory(memory)
-        mem_dict["Last session"] = timestamp
-        
-        if mistakes:
-            existing_mistakes = mem_dict["Recent mistakes"].strip("[]").replace("'", "").replace('"', '').split(",")
-            existing_mistakes.extend(mistakes)
-            cleaned_mistakes = [m.strip() for m in existing_mistakes if m.strip()]
-            if len(cleaned_mistakes) > 5:
-                cleaned_mistakes = cleaned_mistakes[-5:]
-            mem_dict["Recent mistakes"] = "[" + ", ".join(cleaned_mistakes) + "]"
-        
-        existing_subjects = mem_dict["Subjects studied"].strip("[]").replace("'", "").replace('"', '').split(",")
-        existing_subjects.append(request.subject)
-        cleaned_subjects = list(set([s.strip() for s in existing_subjects if s.strip()]))
-        mem_dict["Subjects studied"] = "[" + ", ".join(cleaned_subjects) + "]"
+        mem_dict = parse_memory(await get_memory(user_id))
+        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        record_study_activity(mem_dict, timestamp)
+        for mistake in mistakes:
+            append_memory_item(mem_dict, "Recent mistakes", mistake, limit=5)
+        subjects = set(parse_list_value(mem_dict["Subjects studied"]))
+        subjects.add(request.subject.strip())
+        mem_dict["Subjects studied"] = json.dumps(sorted(subjects), ensure_ascii=False)
+        await save_memory(user_id, serialize_memory(mem_dict))
 
-        updated_memory = serialize_memory(mem_dict)
-        await save_memory(user_id, updated_memory)
-
-        return QuizResult(score=score, total=total, feedback=feedback)
+        return QuizResult(score=score, total=len(request.answers), feedback=feedback)
     except Exception as exc:
         logger.exception("Quiz submission failed: %s", exc)
-        raise HTTPException(status_code=500, detail="Quiz submission failed")
+        raise HTTPException(status_code=500, detail="Quiz submission failed") from exc

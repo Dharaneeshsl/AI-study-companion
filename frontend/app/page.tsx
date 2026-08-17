@@ -33,7 +33,7 @@ export default function ChatPage() {
     setLoading(true);
     setError(null);
     try {
-      const reply = await sendChat({ user_id: userId, message: userMessage.content });
+      const reply = await sendChat({ message: userMessage.content });
       const assistantMessage: ChatMessage = { role: "assistant", content: reply.reply };
       setMessages((prev) => [...prev, assistantMessage]);
     } catch (err) {

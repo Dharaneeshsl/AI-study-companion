@@ -1,6 +1,9 @@
 import os
+
 from motor.motor_asyncio import AsyncIOMotorClient
+
 from core.env import load_project_env
+
 
 load_project_env()
 
@@ -10,9 +13,6 @@ MONGODB_DB_NAME = os.getenv("DATABASE_NAME", "studycompanion")
 client = AsyncIOMotorClient(MONGODB_URL)
 database = client[MONGODB_DB_NAME]
 
-# Dependency
+
 async def get_db():
-    try:
-        yield database
-    finally:
-        pass
+    yield database

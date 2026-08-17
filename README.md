@@ -1,47 +1,77 @@
 # AI Study Companion
 
-AI Study Companion is a full-stack web app that delivers personalized tutoring, quizzes, and study plans using long-term memory. The backend pulls the student’s Hindsight memory, injects it into every Groq prompt, and saves new insights back after each interaction.
+AI Study Companion is a full-stack web app that provides personalized tutoring, quizzes, and study plans using long-term memory. The backend reads the student’s memory, injects relevant context into Groq prompts, and records learning activity with a MongoDB fallback when Hindsight is unavailable.
 
-**Features**
-- Chat tutor with memory-aware responses
-- Personalized 5-question quizzes targeting weak topics
-- Weekly study plan generation with a day-by-day schedule
+## Features
 
-**Setup**
-1. Clone the repository.
-2. Fill in `.env` with your API keys and pipeline ID.
-3. Run `docker-compose up --build`.
-4. Open `http://localhost:3000`.
+The application includes a memory-aware chat tutor, personalized five-question quizzes targeting weak topics, weekly study-plan generation, case-insensitive account authentication, password validation, a real study streak, and a backend health endpoint at `/health`.
 
-**Hindsight API**
-- `pip` (API only): `pip install hindsight-api` then `hindsight-api` (runs on `http://localhost:8888`).
-- Docker (full): included as `hindsight` service in `docker-compose.yml`.
-- LLM envs for Hindsight:
-  - `GROQ_API_KEY`
-  - `GROQ_BASE_URL=https://api.groq.com/openai/v1`
-  - `HINDSIGHT_API_LLM_MODEL=gpt-oss-20b`
-  - `HINDSIGHT_API_LLM_API_KEY` (set same as `GROQ_API_KEY`)
+## Configuration
 
-**Local Dev (No Docker)**
-1. Ensure Python 3.11+ and Node 20+ are installed.
-2. Run `scripts/dev.ps1` (PowerShell) or `scripts/dev.bat` (Command Prompt).
-3. Open `http://localhost:3000`.
+Copy `.env.example` to `.env` and replace the placeholders before starting the application. `SECRET_KEY` and `GROQ_API_KEY` are required for the intended experience. `DATABASE_URL`, `DATABASE_NAME`, Hindsight settings, `CORS_ORIGINS`, and `NEXT_PUBLIC_API_URL` are documented in the template. Do not commit `.env` or real secrets.
 
-**How Memory Is Used**
-- Every request reads the latest Hindsight memory for the user.
-- The memory is injected directly into the Groq system prompt to personalize responses.
-- After chats and quizzes, new learning insights and mistakes are appended and saved back to Hindsight.
+## Docker startup
 
-**Docs**
-- Hindsight: `https://hindsight.vectorize.io`
-- Groq Console: `https://console.groq.com`
+Run the complete stack with:
 
-**CI/CD**
-- CI workflow: `.github/workflows/ci.yml`
-  - Backend dependency install + Python compile check
-  - Frontend dependency install + production build
-- CD workflow: `.github/workflows/cd.yml`
-  - Builds and pushes backend/frontend Docker images to GHCR on `main` or manual trigger
-  - Image names:
-    - `ghcr.io/<owner>/ai-study-companion-backend`
-    - `ghcr.io/<owner>/ai-study-companion-frontend`
+```bash
+docker compose --env-file .env up --build
+```
+
+Open `http://localhost:3000` in a browser. The backend is exposed at `http://localhost:8001`; its readiness endpoint is `http://localhost:8001/health` and should return `{\"status\":\"ok\"}`.
+
+## Local development without Docker
+
+Install Python 3.11 or newer and Node.js 20 or newer. Then run the backend and frontend in separate terminals:
+
+```bash
+cp .env.example .env
+python3 -m venv .venv
+. .venv/bin/activate
+pip install -r backend/requirements.txt
+cd backend
+uvicorn main:app --reload --port 8000
+```
+
+In a second terminal:
+
+```bash
+cd frontend
+npm ci
+NEXT_PUBLIC_API_URL=http://localhost:8000 npm run dev
+```
+
+A local MongoDB instance is required for local development unless the configured Hindsight service is available. Open `http://localhost:3000` after both processes start.
+
+## Hindsight integration
+
+The Docker stack includes Hindsight on `http://localhost:8888`. Its LLM configuration uses `GROQ_API_KEY`, `HINDSIGHT_API_LLM_MODEL`, and `HINDSIGHT_API_LLM_API_KEY`; set the latter to the same value as `GROQ_API_KEY` when required by the Hindsight deployment.
+
+## Memory behavior
+
+Every authenticated request reads the latest memory for that user. Chat insights are stored under `Learning insights` rather than being misclassified as weak topics. Chat and quiz activity updates `Last session` and increments the `Study streak` once per UTC calendar day. Quiz mistakes and studied subjects remain separately tracked, and Hindsight falls back to MongoDB when remote memory is unavailable.
+
+## Verification
+
+Backend checks:
+
+```bash
+python3 -m compileall backend
+python3 -m unittest discover -s backend/tests -v
+```
+
+Frontend checks:
+
+```bash
+cd frontend
+npm ci
+npm run typecheck
+npm run build
+```
+
+The CI workflow runs the same compile, unit-test, type-check, and production-build checks. The CD workflow builds and publishes backend and frontend images to GHCR on `main` or manual dispatch.
+
+## Documentation links
+
+- [Hindsight](https://hindsight.vectorize.io)
+- [Groq Console](https://console.groq.com)

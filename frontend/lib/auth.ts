@@ -24,7 +24,9 @@ export function isAuthenticated(): boolean {
 function decodeBase64Url(input: string): string {
   const base64 = input.replace(/-/g, "+").replace(/_/g, "/");
   const pad = base64.length % 4 === 0 ? "" : "=".repeat(4 - (base64.length % 4));
-  return atob(base64 + pad);
+  const binary = atob(base64 + pad);
+  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+  return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
 }
 
 export function getUserIdFromToken(): string | null {

@@ -1,7 +1,6 @@
-﻿from __future__ import annotations
+﻿from typing import List
 
-from typing import List
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class QuizQuestion(BaseModel):
@@ -14,8 +13,7 @@ class QuizQuestion(BaseModel):
 
 
 class QuizRequest(BaseModel):
-    user_id: str
-    subject: str
+    subject: str = Field(min_length=1, max_length=120)
 
 
 class QuizResponse(BaseModel):
@@ -32,9 +30,8 @@ class QuizAnswer(BaseModel):
 
 
 class QuizSubmitRequest(BaseModel):
-    user_id: str
-    subject: str
-    answers: List[QuizAnswer]
+    subject: str = Field(min_length=1, max_length=120)
+    answers: List[QuizAnswer] = Field(min_length=1, max_length=50)
 
 
 class QuizFeedback(BaseModel):

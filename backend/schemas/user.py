@@ -1,12 +1,30 @@
-from pydantic import BaseModel, EmailStr
+import re
 from typing import Optional
 
+from pydantic import BaseModel, EmailStr, Field, validator
+
+
 class UserBase(BaseModel):
-    username: str
+    username: str = Field(min_length=3, max_length=32)
     email: EmailStr
 
+    @validator("username")
+    def validate_username(cls, value: str) -> str:
+        normalized = value.strip()
+        if not re.fullmatch(r"[A-Za-z0-9_.-]+", normalized):
+            raise ValueError("Username may contain only letters, numbers, underscores, dots, and hyphens")
+        return normalized
+
+
 class UserCreate(UserBase):
-    password: str
+    password: str = Field(min_length=8, max_length=128)
+
+    @validator("password")
+    def validate_password(cls, value: str) -> str:
+        if not any(char.isalpha() for char in value) or not any(char.isdigit() for char in value):
+            raise ValueError("Password must contain at least one letter and one number")
+        return value
+
 
 class UserResponse(UserBase):
     id: str
@@ -15,9 +33,11 @@ class UserResponse(UserBase):
     class Config:
         from_attributes = True
 
+
 class Token(BaseModel):
     access_token: str
     token_type: str
+
 
 class TokenData(BaseModel):
     username: Optional[str] = None
